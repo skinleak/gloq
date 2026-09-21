@@ -11,6 +11,10 @@ type attrPipeline struct {
 
 func (p attrPipeline) apply(groups []string, attr slog.Attr) slog.Attr {
 	attr.Value = attr.Value.Resolve()
+	return p.applyResolved(groups, attr)
+}
+
+func (p attrPipeline) applyResolved(groups []string, attr slog.Attr) slog.Attr {
 	if attr.Equal(slog.Attr{}) {
 		return slog.Attr{}
 	}

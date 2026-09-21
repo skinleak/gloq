@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
@@ -65,11 +67,14 @@ func TestPrettyBuiltInLevels(t *testing.T) {
 		{name: "trace", level: LevelTrace, label: "TRACE"},
 		{name: "debug", level: slog.LevelDebug, label: "DEBUG"},
 		{name: "info", level: slog.LevelInfo, label: "INFO"},
+		{name: "info plus one", level: slog.LevelInfo + 1, label: "INFO+1"},
 		{name: "success", level: LevelSuccess, label: "SUCCESS"},
+		{name: "info plus three", level: slog.LevelInfo + 3, label: "INFO+3"},
 		{name: "warn", level: slog.LevelWarn, label: "WARN"},
 		{name: "error", level: slog.LevelError, label: "ERROR"},
+		{name: "error plus one", level: slog.LevelError + 1, label: "ERROR+1"},
 		{name: "fatal", level: LevelFatal, label: "FATAL"},
-		{name: "custom", level: slog.LevelInfo + 3, label: "INFO+3"},
+		{name: "fatal plus one", level: LevelFatal + 1, label: "ERROR+5"},
 	}
 
 	for _, test := range tests {
@@ -124,6 +129,36 @@ func TestSuccessLevelFiltering(t *testing.T) {
 	}
 }
 
+func TestDynamicLevelFiltering(t *testing.T) {
+	var output bytes.Buffer
+	var level slog.LevelVar
+	level.Set(slog.LevelWarn)
+	logger := slog.New(NewHandler(
+		&output,
+		WithLevel(&level),
+		WithSource(false),
+	))
+
+	logger.Log(context.Background(), LevelSuccess, "hidden success")
+	if output.Len() != 0 {
+		t.Fatalf("success was written at WARN minimum: %q", output.String())
+	}
+
+	level.Set(LevelSuccess)
+	logger.Log(context.Background(), slog.LevelInfo, "hidden info")
+	logger.Log(context.Background(), LevelSuccess, "visible success")
+	if got := output.String(); strings.Contains(got, "hidden info") || !strings.Contains(got, "visible success") {
+		t.Fatalf("unexpected output at SUCCESS minimum: %q", got)
+	}
+
+	output.Reset()
+	level.Set(LevelTrace)
+	logger.Log(context.Background(), LevelTrace, "visible trace")
+	if got := output.String(); !strings.Contains(got, "visible trace") {
+		t.Fatalf("trace was not written after lowering minimum: %q", got)
+	}
+}
+
 func TestJSONHandler(t *testing.T) {
 	var output bytes.Buffer
 	logger := slog.New(NewHandler(
@@ -159,6 +194,42 @@ func TestJSONSuccessLevel(t *testing.T) {
 	}
 	if record[slog.LevelKey] != "SUCCESS" {
 		t.Fatalf("level = %v, want SUCCESS", record[slog.LevelKey])
+	}
+}
+
+func TestJSONCustomLevelNames(t *testing.T) {
+	tests := []struct {
+		name  string
+		level slog.Level
+		want  string
+	}{
+		{name: "info plus one", level: slog.LevelInfo + 1, want: "INFO+1"},
+		{name: "success", level: LevelSuccess, want: "SUCCESS"},
+		{name: "info plus three", level: slog.LevelInfo + 3, want: "INFO+3"},
+		{name: "error plus one", level: slog.LevelError + 1, want: "ERROR+1"},
+		{name: "fatal", level: LevelFatal, want: "FATAL"},
+		{name: "fatal plus one", level: LevelFatal + 1, want: "ERROR+5"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			logger := slog.New(NewHandler(
+				&output,
+				WithFormat(FormatJSON),
+				WithSource(false),
+			))
+
+			logger.Log(context.Background(), test.level, "message")
+
+			var record map[string]any
+			if err := json.Unmarshal(output.Bytes(), &record); err != nil {
+				t.Fatalf("output is not JSON: %v", err)
+			}
+			if got := record[slog.LevelKey]; got != test.want {
+				t.Fatalf("level = %v, want %s", got, test.want)
+			}
+		})
 	}
 }
 
@@ -344,9 +415,93 @@ func TestJSONFatalLevel(t *testing.T) {
 	}
 }
 
+func TestFatal(t *testing.T) {
+	if mode := os.Getenv("GLOQ_FATAL_TEST"); mode != "" {
+		options := []Option{WithColor(ColorNever), WithSource(false)}
+		if mode == "filtered" {
+			options = append(options, WithLevel(slog.Level(20)))
+		}
+		SetDefault(slog.New(NewHandler(os.Stderr, options...)))
+		Fatal("fatal message", "code", 17)
+		fmt.Fprintln(os.Stderr, "after Fatal")
+		return
+	}
+
+	tests := []struct {
+		name       string
+		mode       string
+		wantRecord bool
+	}{
+		{name: "emitted", mode: "enabled", wantRecord: true},
+		{name: "filtered", mode: "filtered", wantRecord: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			command := exec.Command(os.Args[0], "-test.run=^TestFatal$")
+			command.Env = append(os.Environ(), "GLOQ_FATAL_TEST="+test.mode)
+			output, err := command.CombinedOutput()
+			exitError, ok := err.(*exec.ExitError)
+			if !ok || exitError.ExitCode() != 1 {
+				t.Fatalf("exit error = %v, output = %q", err, output)
+			}
+			if strings.Contains(string(output), "after Fatal") {
+				t.Fatalf("code after Fatal ran: %q", output)
+			}
+			hasRecord := strings.Contains(string(output), "FATAL fatal message code=17")
+			if hasRecord != test.wantRecord {
+				t.Fatalf("record present = %v, want %v; output = %q", hasRecord, test.wantRecord, output)
+			}
+		})
+	}
+}
+
+func TestWriterErrors(t *testing.T) {
+	want := errors.New("write failed")
+
+	for _, format := range []struct {
+		name   string
+		option Option
+	}{
+		{name: "pretty", option: WithFormat(FormatPretty)},
+		{name: "json", option: WithFormat(FormatJSON)},
+	} {
+		t.Run(format.name+" handler returns error", func(t *testing.T) {
+			writer := &errorWriter{err: want}
+			handler := NewHandler(writer, format.option, WithSource(false))
+			record := slog.NewRecord(time.Time{}, slog.LevelInfo, "message", 0)
+
+			if got := handler.Handle(context.Background(), record); !errors.Is(got, want) {
+				t.Fatalf("Handle() error = %v, want %v", got, want)
+			}
+			if writer.calls != 1 {
+				t.Fatalf("writer calls = %d, want 1", writer.calls)
+			}
+		})
+	}
+
+	t.Run("package helper cannot return error", func(t *testing.T) {
+		writer := &errorWriter{err: want}
+		previous := Default()
+		SetDefault(slog.New(NewHandler(writer, WithSource(false))))
+		t.Cleanup(func() { SetDefault(previous) })
+
+		Info("message")
+
+		if writer.calls != 1 {
+			t.Fatalf("writer calls = %d, want 1", writer.calls)
+		}
+	})
+}
+
 func TestConcurrentWritesStaySeparate(t *testing.T) {
 	var output bytes.Buffer
 	logger := slog.New(NewHandler(&output, WithSource(false)))
+	loggers := []*slog.Logger{
+		logger,
+		logger.With("service", "api"),
+		logger.WithGroup("request"),
+	}
 
 	const writers = 20
 	var wait sync.WaitGroup
@@ -354,7 +509,7 @@ func TestConcurrentWritesStaySeparate(t *testing.T) {
 		wait.Add(1)
 		go func(id int) {
 			defer wait.Done()
-			logger.Info("message", "id", id)
+			loggers[id%len(loggers)].Info("message", "id", id)
 		}(i)
 	}
 	wait.Wait()
@@ -455,6 +610,106 @@ func TestOptionalErrorStack(t *testing.T) {
 	}
 }
 
+func TestPathologicalErrorsDoNotPanic(t *testing.T) {
+	cycle := &cyclicError{}
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "panicking Error", err: panickingError{}},
+		{name: "panicking Unwrap", err: panickingUnwrapper{}},
+		{name: "cyclic Unwrap", err: cycle},
+		{name: "nil multi cause", err: multiError{causes: []error{nil, errors.New("cause"), nil}}},
+	}
+	formats := []struct {
+		name   string
+		option Option
+	}{
+		{name: "pretty", option: WithFormat(FormatPretty)},
+		{name: "json", option: WithFormat(FormatJSON)},
+	}
+
+	for _, format := range formats {
+		for _, test := range tests {
+			t.Run(format.name+"/"+test.name, func(t *testing.T) {
+				var output bytes.Buffer
+				logger := slog.New(NewHandler(&output, format.option, WithSource(false)))
+
+				logger.Error("failed", "error", test.err)
+
+				if output.Len() == 0 {
+					t.Fatal("no output was written")
+				}
+				if test.name == "panicking Error" && !strings.Contains(output.String(), "<error message panicked>") {
+					t.Fatalf("panic sentinel is missing: %q", output.String())
+				}
+				if format.name == "json" && !json.Valid(output.Bytes()) {
+					t.Fatalf("output is not valid JSON: %q", output.String())
+				}
+			})
+		}
+	}
+}
+
+func TestNilMultiErrorCausesAreFiltered(t *testing.T) {
+	detail := describeError(
+		multiError{causes: []error{nil, errors.New("cause"), nil}},
+		false,
+		0,
+	)
+	if len(detail.Causes) != 1 || detail.Causes[0].Message != "cause" {
+		t.Fatalf("causes = %#v", detail.Causes)
+	}
+}
+
+func TestErrorDepthIsBounded(t *testing.T) {
+	var err error = errors.New("root")
+	for i := 0; i < maxErrorDepth+10; i++ {
+		err = fmt.Errorf("layer %d: %w", i, err)
+	}
+
+	var output bytes.Buffer
+	logger := slog.New(NewHandler(&output, WithFormat(FormatJSON), WithSource(false)))
+	logger.Error("failed", "error", err)
+
+	var record struct {
+		Error structuredError `json:"error"`
+	}
+	if err := json.Unmarshal(output.Bytes(), &record); err != nil {
+		t.Fatalf("output is not JSON: %v", err)
+	}
+	depth := 1
+	for detail := record.Error; len(detail.Causes) > 0; detail = detail.Causes[0] {
+		depth++
+	}
+	if depth != maxErrorDepth+1 {
+		t.Fatalf("error depth = %d, want %d", depth, maxErrorDepth+1)
+	}
+}
+
+func TestMultiplePrettyErrors(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(NewHandler(&output, WithSource(false)))
+
+	logger.Error("failed", "first", errors.New("one"), "second", errors.New("two"))
+
+	got := output.String()
+	if strings.Count(got, "first: one") != 1 || strings.Count(got, "second: two") != 1 {
+		t.Fatalf("unexpected error output: %q", got)
+	}
+}
+
+func TestRecursiveLogValuerIsBounded(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(NewHandler(&output, WithSource(false)))
+
+	logger.Info("message", "value", recursiveLogValuer{})
+
+	if got := output.String(); !strings.Contains(got, "LogValue called too many times") {
+		t.Fatalf("output does not contain resolution error: %q", got)
+	}
+}
+
 func TestAttributePipelineMatchesFormats(t *testing.T) {
 	transform := withAttrTransform(func(groups []string, attr slog.Attr) slog.Attr {
 		if attr.Key == slog.MessageKey {
@@ -499,6 +754,25 @@ func TestAttributePipelineMatchesFormats(t *testing.T) {
 	}
 }
 
+func TestSourceTransformStillApplies(t *testing.T) {
+	transform := withAttrTransform(func(_ []string, attr slog.Attr) slog.Attr {
+		if attr.Key == slog.SourceKey {
+			attr.Value = slog.StringValue("redacted")
+		}
+		return attr
+	})
+	var output bytes.Buffer
+	previous := Default()
+	SetDefault(slog.New(NewHandler(&output, WithColor(ColorNever), transform)))
+	t.Cleanup(func() { SetDefault(previous) })
+
+	Info("message")
+
+	if got := output.String(); !strings.Contains(got, "[redacted] message") {
+		t.Fatalf("source transform was not applied: %q", got)
+	}
+}
+
 type nilError struct{}
 
 func (e *nilError) Error() string {
@@ -518,6 +792,67 @@ func (stackError) Format(state fmt.State, verb rune) {
 		return
 	}
 	fmt.Fprint(state, "boom")
+}
+
+type errorWriter struct {
+	err   error
+	calls int
+}
+
+func (w *errorWriter) Write(_ []byte) (int, error) {
+	w.calls++
+	return 0, w.err
+}
+
+type panickingError struct{}
+
+func (panickingError) Error() string { panic("boom") }
+
+type panickingUnwrapper struct{}
+
+func (panickingUnwrapper) Error() string { return "outer" }
+func (panickingUnwrapper) Unwrap() error { panic("boom") }
+
+type cyclicError struct{}
+
+func (e *cyclicError) Error() string { return "cycle" }
+func (e *cyclicError) Unwrap() error { return e }
+
+type multiError struct {
+	causes []error
+}
+
+func (e multiError) Error() string   { return "multiple" }
+func (e multiError) Unwrap() []error { return e.causes }
+
+type recursiveLogValuer struct{}
+
+func (recursiveLogValuer) LogValue() slog.Value {
+	return slog.AnyValue(recursiveLogValuer{})
+}
+
+func FuzzPrettyHandler(f *testing.F) {
+	f.Add("message", "request", "id", "abc123", int32(slog.LevelInfo))
+	f.Add("spaces and \"quotes\"", "", "key.with.dot", "a=b\nnext", int32(LevelSuccess))
+
+	f.Fuzz(func(t *testing.T, message, group, key, value string, rawLevel int32) {
+		var output bytes.Buffer
+		handler := NewHandler(
+			&output,
+			WithColor(ColorNever),
+			WithLevel(LevelTrace),
+			WithSource(false),
+		)
+		record := slog.NewRecord(time.Time{}, slog.Level(rawLevel), message, 0)
+		record.AddAttrs(slog.Group(group, slog.String(key, value)))
+
+		if err := handler.Handle(context.Background(), record); err != nil {
+			t.Fatalf("Handle() error = %v", err)
+		}
+		if got := output.String(); !strings.HasSuffix(got, "\n") {
+			t.Fatalf("output is not newline terminated: %q", got)
+		}
+	})
 }
 
 func parsePrettyRecord(t *testing.T, line string) map[string]any {

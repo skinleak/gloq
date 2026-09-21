@@ -39,8 +39,9 @@ func describeError(err error, includeStack bool, depth int) structuredError {
 
 func appendPrettyError(line *strings.Builder, detail prettyError, includeStack bool) {
 	line.WriteByte('\n')
-	writeErrorLine(line, "  ", detail.key, errorDisplayMessage(detail.err))
-	appendPrettyCauses(line, detail.err, "    ", includeStack, 0)
+	causes := errorCauses(detail.err)
+	writeErrorLine(line, "  ", detail.key, errorDisplayMessage(detail.err, causes))
+	appendPrettyCauses(line, causes, "    ", includeStack, 0)
 	if includeStack {
 		if stack := errorStack(detail.err); stack != "" {
 			writeErrorLine(line, "    ", "stack", stack)
@@ -48,29 +49,28 @@ func appendPrettyError(line *strings.Builder, detail prettyError, includeStack b
 	}
 }
 
-func appendPrettyCauses(line *strings.Builder, err error, indent string, includeStack bool, depth int) {
-	if depth >= maxErrorDepth || isNilError(err) {
+func appendPrettyCauses(line *strings.Builder, causes []error, indent string, includeStack bool, depth int) {
+	if depth >= maxErrorDepth {
 		return
 	}
-	causes := errorCauses(err)
 	for index, cause := range causes {
 		label := "caused by"
 		if len(causes) > 1 {
 			label = fmt.Sprintf("caused by[%d]", index)
 		}
-		writeErrorLine(line, indent, label, errorDisplayMessage(cause))
+		childCauses := errorCauses(cause)
+		writeErrorLine(line, indent, label, errorDisplayMessage(cause, childCauses))
 		if includeStack {
 			if stack := errorStack(cause); stack != "" {
 				writeErrorLine(line, indent+"  ", "stack", stack)
 			}
 		}
-		appendPrettyCauses(line, cause, indent+"  ", includeStack, depth+1)
+		appendPrettyCauses(line, childCauses, indent+"  ", includeStack, depth+1)
 	}
 }
 
-func errorDisplayMessage(err error) string {
+func errorDisplayMessage(err error, causes []error) string {
 	message := errorMessage(err)
-	causes := errorCauses(err)
 	if len(causes) == 1 {
 		cause := errorMessage(causes[0])
 		if own := strings.TrimSuffix(message, ": "+cause); own != message && own != "" {
@@ -103,7 +103,7 @@ func errorCauses(err error) []error {
 		return nil
 	}
 	if joined, ok := err.(interface{ Unwrap() []error }); ok {
-		causes := joined.Unwrap()
+		causes := unwrapMany(joined)
 		result := make([]error, 0, len(causes))
 		for _, cause := range causes {
 			if cause != nil {
@@ -113,11 +113,29 @@ func errorCauses(err error) []error {
 		return result
 	}
 	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
-		if cause := wrapped.Unwrap(); cause != nil {
+		if cause := unwrapOne(wrapped); cause != nil {
 			return []error{cause}
 		}
 	}
 	return nil
+}
+
+func unwrapMany(err interface{ Unwrap() []error }) (causes []error) {
+	defer func() {
+		if recover() != nil {
+			causes = nil
+		}
+	}()
+	return err.Unwrap()
+}
+
+func unwrapOne(err interface{ Unwrap() error }) (cause error) {
+	defer func() {
+		if recover() != nil {
+			cause = nil
+		}
+	}()
+	return err.Unwrap()
 }
 
 func errorMessage(err error) (message string) {

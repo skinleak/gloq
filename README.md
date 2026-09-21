@@ -1,14 +1,24 @@
-# gloq – Colorful Structured Logging for Go
+<p align="center">
+  <img src="media/gloq.png" alt="gloq logo" width="160">
+</p>
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/skinleak/gloq.svg)](https://pkg.go.dev/github.com/skinleak/gloq)
-[![CI](https://github.com/skinleak/gloq/actions/workflows/ci.yml/badge.svg)](https://github.com/skinleak/gloq/actions/workflows/ci.yml)
-[![Go version](https://img.shields.io/github/go-mod/go-version/skinleak/gloq)](go.mod)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+<h1 align="center">gloq</h1>
 
-gloq is a lightweight, colorful structured logging library for Go. Built on
-the standard [`log/slog`](https://pkg.go.dev/log/slog) package and inspired by
-tslog, it combines human-friendly console logs for development with structured
-JSON logging for production.
+<p align="center">
+  Colorful structured logging for Go, built on <code>log/slog</code>.
+</p>
+
+<p align="center">
+  <a href="https://pkg.go.dev/github.com/skinleak/gloq"><img src="https://pkg.go.dev/badge/github.com/skinleak/gloq.svg" alt="Go Reference"></a>
+  <a href="https://github.com/skinleak/gloq/actions/workflows/ci.yml"><img src="https://github.com/skinleak/gloq/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/skinleak/gloq" alt="Go version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+</p>
+
+gloq is a lightweight structured logging library for Go. Inspired by tslog and
+built directly on the standard [`log/slog`](https://pkg.go.dev/log/slog)
+package, it combines readable, color-coded console logs for development with
+structured JSON output for production.
 
 ## Features
 
@@ -26,7 +36,7 @@ JSON logging for production.
 go get github.com/skinleak/gloq
 ```
 
-## Quick start
+## Quick Start
 
 ```go
 package main
@@ -51,7 +61,7 @@ Example output in a supported terminal:
 ```
 
 Because gloq implements Go's standard `slog.Handler` interface, child loggers,
-structured attributes, and groups work as expected:
+structured attributes, groups, and context-aware methods work as expected:
 
 ```go
 log := gloq.New()
@@ -63,21 +73,13 @@ Colors are enabled automatically for terminals and disabled for redirected
 output. Set `NO_COLOR=1` to disable them explicitly, or use
 `gloq.WithColor(gloq.ColorNever)`.
 
-## JSON logging
+## Log Levels
 
-Switch to newline-delimited JSON for production logging:
+Built-in levels are ordered:
 
-```go
-log := gloq.New(gloq.WithFormat(gloq.FormatJSON))
+```text
+TRACE < DEBUG < INFO < SUCCESS < WARN < ERROR < FATAL
 ```
-
-The package-level `Trace`, `Debug`, `Info`, `Success`, `Warn`, `Error`, and
-`Fatal` functions are also available for small programs. `Trace` automatically
-includes the current call stack, while `Fatal` exits with status code 1.
-
-## Log levels
-
-Built-in levels are ordered `TRACE < DEBUG < INFO < SUCCESS < WARN < ERROR < FATAL`.
 
 | Level     | `slog` value | Description                                                         |
 | --------- | -----------: | ------------------------------------------------------------------- |
@@ -90,14 +92,36 @@ Built-in levels are ordered `TRACE < DEBUG < INFO < SUCCESS < WARN < ERROR < FAT
 | `FATAL`   |           12 | Errors that stop the program; `gloq.Fatal` exits with status code 1 |
 
 The default minimum level is `INFO`. Set a different threshold with
-`gloq.WithLevel`, for example:
+`gloq.WithLevel`:
 
 ```go
 gloq.SetDefault(gloq.New(gloq.WithLevel(gloq.LevelTrace)))
 gloq.Trace("entering request handler", "request_id", "abc123")
 ```
 
-## Structured errors
+The package-level `Trace`, `Debug`, `Info`, `Success`, `Warn`, `Error`, and
+`Fatal` helpers are available for small programs. `Trace` captures the current
+call stack, while `Fatal` logs and exits with status code 1.
+
+Logger instances remain standard `*slog.Logger` values. Use `Log` for gloq's
+custom levels:
+
+```go
+logger.Log(ctx, gloq.LevelSuccess, "operation completed")
+```
+
+## JSON Logging
+
+Switch to newline-delimited JSON for production logging:
+
+```go
+log := gloq.New(gloq.WithFormat(gloq.FormatJSON))
+```
+
+JSON output uses the standard slog field structure while preserving gloq's
+custom level names and structured error handling.
+
+## Structured Errors
 
 Errors are rendered with their wrapped or joined causes automatically:
 
@@ -130,9 +154,12 @@ for the complete API.
 gloq supports Go 1.21 and newer and follows semantic versioning. Breaking API
 changes will only be released in a new major version.
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
-For security issues, see [SECURITY.md](SECURITY.md).
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) to get
+started. Report security issues privately as described in
+[SECURITY.md](SECURITY.md).
 
 ## License
 
-This project is available under the [MIT License](LICENSE).
+gloq is available under the [MIT License](LICENSE).
