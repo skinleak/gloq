@@ -4,7 +4,7 @@
 // terminal output for local development and newline-delimited JSON for
 // production log collectors. It supports structured attributes, child
 // loggers, groups, source locations, automatic error-chain rendering, and
-// TRACE through FATAL log levels.
+// TRACE, DEBUG, INFO, SUCCESS, WARN, ERROR, and FATAL log levels.
 //
 // For a ready-to-use logger, call [New]:
 //

@@ -10,6 +10,7 @@ import (
 func main() {
 	gloq.Debug("starting up...")
 	gloq.Info("server is ready", "address", ":8080")
+	gloq.Success("cache warmed", "entries", 128)
 	gloq.Warn("connection is slow", "duration", "2s")
 
 	err := fmt.Errorf("query failed: %w", errors.New("connection refused"))

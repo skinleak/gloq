@@ -16,18 +16,22 @@ import (
 )
 
 const (
-	debugColor = "\033[1;92m"       // green bold
-	infoColor  = "\033[1;94m"       // blue bold
-	traceColor = "\033[1;97m"       // white bold
-	warnColor  = "\033[1;93m"       // yellow bold
-	errorColor = "\033[1;91m"       // red bold
-	fatalColor = "\033[1;38;5;208m" // orange bold
-	resetColor = "\033[0m"
+	traceColor   = "\x1b[1;97m"       // white bold
+	debugColor   = "\x1b[1;96m"       // cyan bold
+	infoColor    = "\x1b[1;94m"       // blue bold
+	successColor = "\x1b[1;92m"       // green bold
+	warnColor    = "\x1b[1;93m"       // yellow bold
+	errorColor   = "\x1b[1;91m"       // red bold
+	fatalColor   = "\x1b[1;38;5;208m" // orange bold
+
+	resetColor = "\x1b[0m"
 )
 
 const (
 	// LevelTrace is for very detailed diagnostics and execution tracing.
 	LevelTrace = slog.LevelDebug - 4
+	// LevelSuccess is for successful or positive events.
+	LevelSuccess = slog.LevelInfo + 2
 	// LevelFatal is for errors that stop the program.
 	LevelFatal = slog.LevelError + 4
 )
@@ -309,6 +313,8 @@ func levelNameAndColor(level slog.Level) (string, string) {
 		return level.String(), errorColor
 	case level >= slog.LevelWarn:
 		return level.String(), warnColor
+	case level == LevelSuccess:
+		return "SUCCESS", successColor
 	case level >= slog.LevelInfo:
 		return level.String(), infoColor
 	case level >= slog.LevelDebug:
@@ -456,6 +462,11 @@ func Debug(message string, args ...any) {
 // Info writes an informational message.
 func Info(message string, args ...any) {
 	log(context.Background(), slog.LevelInfo, message, args...)
+}
+
+// Success writes a successful or positive event.
+func Success(message string, args ...any) {
+	log(context.Background(), LevelSuccess, message, args...)
 }
 
 // Trace writes a detailed diagnostic message with the current call stack.

@@ -56,6 +56,74 @@ func TestHandlerFiltersLevels(t *testing.T) {
 	}
 }
 
+func TestPrettyBuiltInLevels(t *testing.T) {
+	tests := []struct {
+		name  string
+		level slog.Level
+		label string
+	}{
+		{name: "trace", level: LevelTrace, label: "TRACE"},
+		{name: "debug", level: slog.LevelDebug, label: "DEBUG"},
+		{name: "info", level: slog.LevelInfo, label: "INFO"},
+		{name: "success", level: LevelSuccess, label: "SUCCESS"},
+		{name: "warn", level: slog.LevelWarn, label: "WARN"},
+		{name: "error", level: slog.LevelError, label: "ERROR"},
+		{name: "fatal", level: LevelFatal, label: "FATAL"},
+		{name: "custom", level: slog.LevelInfo + 3, label: "INFO+3"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			handler := NewHandler(
+				&output,
+				WithColor(ColorNever),
+				WithLevel(LevelTrace),
+				WithSource(false),
+			)
+			record := slog.NewRecord(time.Time{}, test.level, "message", 0)
+
+			if err := handler.Handle(context.Background(), record); err != nil {
+				t.Fatalf("Handle() error = %v", err)
+			}
+
+			padding := strings.Repeat(" ", max(0, 5-len(test.label)))
+			if got, want := output.String(), test.label+padding+" message\n"; got != want {
+				t.Fatalf("output = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestSuccessLevelFiltering(t *testing.T) {
+	tests := []struct {
+		name    string
+		minimum slog.Level
+		visible bool
+	}{
+		{name: "info", minimum: slog.LevelInfo, visible: true},
+		{name: "success", minimum: LevelSuccess, visible: true},
+		{name: "warn", minimum: slog.LevelWarn, visible: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			logger := slog.New(NewHandler(
+				&output,
+				WithLevel(test.minimum),
+				WithSource(false),
+			))
+
+			logger.Log(context.Background(), LevelSuccess, "operation completed")
+
+			if got := output.Len() > 0; got != test.visible {
+				t.Fatalf("output visible = %v, want %v; output = %q", got, test.visible, output.String())
+			}
+		})
+	}
+}
+
 func TestJSONHandler(t *testing.T) {
 	var output bytes.Buffer
 	logger := slog.New(NewHandler(
@@ -75,6 +143,25 @@ func TestJSONHandler(t *testing.T) {
 	}
 }
 
+func TestJSONSuccessLevel(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(NewHandler(
+		&output,
+		WithFormat(FormatJSON),
+		WithSource(false),
+	))
+
+	logger.Log(context.Background(), LevelSuccess, "operation completed")
+
+	var record map[string]any
+	if err := json.Unmarshal(output.Bytes(), &record); err != nil {
+		t.Fatalf("output is not JSON: %v", err)
+	}
+	if record[slog.LevelKey] != "SUCCESS" {
+		t.Fatalf("level = %v, want SUCCESS", record[slog.LevelKey])
+	}
+}
+
 func TestPackageFunctionReportsCaller(t *testing.T) {
 	var output bytes.Buffer
 	previous := Default()
@@ -85,6 +172,29 @@ func TestPackageFunctionReportsCaller(t *testing.T) {
 
 	if got := output.String(); !strings.Contains(got, "[gloq_test.go:") {
 		t.Fatalf("output does not contain caller: %q", got)
+	}
+}
+
+func TestSuccessReportsCallerAndAttributes(t *testing.T) {
+	var output bytes.Buffer
+	previous := Default()
+	SetDefault(slog.New(NewHandler(&output, WithColor(ColorNever))))
+	t.Cleanup(func() { SetDefault(previous) })
+
+	Success("operation completed", "job_id", 42)
+
+	got := output.String()
+	for _, want := range []string{
+		"SUCCESS",
+		"[gloq_test.go:",
+		"operation completed job_id=42",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output does not contain %q: %q", want, got)
+		}
+	}
+	if strings.Contains(got, "  stack:") {
+		t.Fatalf("success output contains a trace stack: %q", got)
 	}
 }
 
@@ -157,17 +267,40 @@ func TestTraceIsDisabledByDefault(t *testing.T) {
 }
 
 func TestColorAlways(t *testing.T) {
-	var output bytes.Buffer
-	logger := slog.New(NewHandler(
-		&output,
-		WithColor(ColorAlways),
-		WithSource(false),
-	))
+	tests := []struct {
+		name  string
+		level slog.Level
+		label string
+		color string
+	}{
+		{name: "trace", level: LevelTrace, label: "TRACE", color: traceColor},
+		{name: "debug", level: slog.LevelDebug, label: "DEBUG", color: debugColor},
+		{name: "info", level: slog.LevelInfo, label: "INFO", color: infoColor},
+		{name: "success", level: LevelSuccess, label: "SUCCESS", color: successColor},
+		{name: "warn", level: slog.LevelWarn, label: "WARN", color: warnColor},
+		{name: "error", level: slog.LevelError, label: "ERROR", color: errorColor},
+		{name: "fatal", level: LevelFatal, label: "FATAL", color: fatalColor},
+	}
 
-	logger.Info("hello")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			logger := slog.New(NewHandler(
+				&output,
+				WithColor(ColorAlways),
+				WithLevel(LevelTrace),
+				WithSource(false),
+			))
 
-	if got := output.String(); !strings.Contains(got, infoColor+"INFO"+resetColor) {
-		t.Fatalf("output does not contain color: %q", got)
+			logger.Log(context.Background(), test.level, "hello")
+
+			if got := output.String(); !strings.Contains(got, test.color+test.label+resetColor) {
+				t.Fatalf("output does not contain expected color: %q", got)
+			}
+			if test.level == slog.LevelDebug && strings.Contains(output.String(), successColor+"DEBUG") {
+				t.Fatalf("debug output uses success green: %q", output.String())
+			}
+		})
 	}
 }
 

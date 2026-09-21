@@ -15,7 +15,7 @@ JSON logging for production.
 - Color-coded, readable terminal output with automatic TTY detection
 - Native `slog.Handler` compatibility, including attributes and groups
 - Structured JSON output for log collectors and observability platforms
-- `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, and `FATAL` log levels
+- `TRACE`, `DEBUG`, `INFO`, `SUCCESS`, `WARN`, `ERROR`, and `FATAL` log levels
 - Source file and line information enabled by default
 - Automatic rendering of wrapped and joined Go errors
 - No third-party runtime dependencies
@@ -35,6 +35,7 @@ import "github.com/skinleak/gloq"
 
 func main() {
 	gloq.Info("server is ready", "address", ":8080")
+	gloq.Success("cache warmed", "entries", 128)
 	gloq.Warn("connection is slow", "duration", "2s")
 	gloq.Error("request failed", "status", 500)
 }
@@ -44,8 +45,9 @@ Example output in a supported terminal:
 
 ```text
 2026-09-21 10:30:15.123 INFO  [main.go:6] server is ready address=:8080
-2026-09-21 10:30:15.124 WARN  [main.go:7] connection is slow duration=2s
-2026-09-21 10:30:15.125 ERROR [main.go:8] request failed status=500
+2026-09-21 10:30:15.124 SUCCESS [main.go:7] cache warmed entries=128
+2026-09-21 10:30:15.125 WARN  [main.go:8] connection is slow duration=2s
+2026-09-21 10:30:15.126 ERROR [main.go:9] request failed status=500
 ```
 
 Because gloq implements Go's standard `slog.Handler` interface, child loggers,
@@ -69,20 +71,23 @@ Switch to newline-delimited JSON for production logging:
 log := gloq.New(gloq.WithFormat(gloq.FormatJSON))
 ```
 
-The package-level `Trace`, `Debug`, `Info`, `Warn`, `Error`, and `Fatal`
-functions are also available for small programs. `Trace` automatically includes
-the current call stack, while `Fatal` exits with status code 1.
+The package-level `Trace`, `Debug`, `Info`, `Success`, `Warn`, `Error`, and
+`Fatal` functions are also available for small programs. `Trace` automatically
+includes the current call stack, while `Fatal` exits with status code 1.
 
 ## Log levels
 
-| Level   | `slog` value | Description                                                         |
-| ------- | -----------: | ------------------------------------------------------------------- |
-| `TRACE` |           -8 | Very detailed diagnostics with an automatic call stack              |
-| `DEBUG` |           -4 | Detailed diagnostic information                                     |
-| `INFO`  |            0 | General informational messages                                      |
-| `WARN`  |            4 | Potential problems that do not stop the program                     |
-| `ERROR` |            8 | Errors that prevent an operation from completing                    |
-| `FATAL` |           12 | Errors that stop the program; `gloq.Fatal` exits with status code 1 |
+Built-in levels are ordered `TRACE < DEBUG < INFO < SUCCESS < WARN < ERROR < FATAL`.
+
+| Level     | `slog` value | Description                                                         |
+| --------- | -----------: | ------------------------------------------------------------------- |
+| `TRACE`   |           -8 | Very detailed diagnostics with an automatic call stack              |
+| `DEBUG`   |           -4 | Detailed diagnostic information                                     |
+| `INFO`    |            0 | General informational messages                                      |
+| `SUCCESS` |            2 | Successful or positive events                                       |
+| `WARN`    |            4 | Potential problems that do not stop the program                     |
+| `ERROR`   |            8 | Errors that prevent an operation from completing                    |
+| `FATAL`   |           12 | Errors that stop the program; `gloq.Fatal` exits with status code 1 |
 
 The default minimum level is `INFO`. Set a different threshold with
 `gloq.WithLevel`, for example:

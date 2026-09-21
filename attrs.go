@@ -32,6 +32,9 @@ func (p attrPipeline) forJSON(groups []string, attr slog.Attr) slog.Attr {
 	if attr.Key == slog.LevelKey && attr.Value.Any() == LevelFatal {
 		return slog.String(slog.LevelKey, "FATAL")
 	}
+	if attr.Key == slog.LevelKey && attr.Value.Any() == LevelSuccess {
+		return slog.String(slog.LevelKey, "SUCCESS")
+	}
 	if attr.Key == slog.LevelKey && attr.Value.Any() == LevelTrace {
 		return slog.String(slog.LevelKey, "TRACE")
 	}
