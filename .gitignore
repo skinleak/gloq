@@ -1,0 +1,75 @@
+# Go build outputs
+/gloq
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/__debug_bin*
+
+# Tests, coverage, benchmarks, and profiling
+/coverage/
+coverage.out
+coverage.html
+*.coverprofile
+*.prof
+*.pprof
+*.trace
+
+# Local Go workspaces (module dependency files remain tracked)
+go.work
+go.work.sum
+
+# Temporary files and caches
+/.cache/
+/.gocache/
+/.gomodcache/
+/.tmp/
+/tmp/
+/temp/
+*.tmp
+*.temp
+*.bak
+*.orig
+
+# Logs and runtime state
+*.log
+*.pid
+*.pid.lock
+*.seed
+*.stackdump
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+!.env.*.example
+!.env.*.sample
+!.env.*.template
+/.secrets/
+todo.txt
+
+# Editors and IDEs
+/.idea/
+/.vscode/
+/.fleet/
+*.code-workspace
+*.swp
+*.swo
+*~
+
+# Operating-system metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
