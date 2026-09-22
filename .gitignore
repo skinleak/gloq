@@ -54,6 +54,7 @@ go.work.sum
 !.env.*.template
 /.secrets/
 todo.txt
+/benchmarks/
 
 # Editors and IDEs
 /.idea/
