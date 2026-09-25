@@ -360,13 +360,17 @@ func appendAttr(
 		return
 	}
 	value = attr.Value
-	if stack, ok := value.Any().(traceStack); ok {
-		*stacks = append(*stacks, stack)
-		return
-	}
-	if err, ok := value.Any().(error); ok {
-		*errors = append(*errors, prettyError{key: joinedKey(groups, attr.Key), err: err})
-		return
+	// Inspect the resolved, transformed value without boxing primitive kinds.
+	if value.Kind() == slog.KindAny {
+		special := value.Any()
+		if stack, ok := special.(traceStack); ok {
+			*stacks = append(*stacks, stack)
+			return
+		}
+		if err, ok := special.(error); ok {
+			*errors = append(*errors, prettyError{key: joinedKey(groups, attr.Key), err: err})
+			return
+		}
 	}
 
 	line.WriteByte(' ')

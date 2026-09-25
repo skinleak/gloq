@@ -33,19 +33,25 @@ func (p attrPipeline) forJSON(groups []string, attr slog.Attr) slog.Attr {
 	if attr.Equal(slog.Attr{}) {
 		return slog.Attr{}
 	}
-	if attr.Key == slog.LevelKey && attr.Value.Any() == LevelFatal {
+	// Resolution and transforms have run; only KindAny can contain a level,
+	// error, or traceStack. Avoid boxing primitive values just to inspect them.
+	if attr.Value.Kind() != slog.KindAny {
+		return attr
+	}
+	value := attr.Value.Any()
+	if attr.Key == slog.LevelKey && value == LevelFatal {
 		return slog.String(slog.LevelKey, "FATAL")
 	}
-	if attr.Key == slog.LevelKey && attr.Value.Any() == LevelSuccess {
+	if attr.Key == slog.LevelKey && value == LevelSuccess {
 		return slog.String(slog.LevelKey, "SUCCESS")
 	}
-	if attr.Key == slog.LevelKey && attr.Value.Any() == LevelTrace {
+	if attr.Key == slog.LevelKey && value == LevelTrace {
 		return slog.String(slog.LevelKey, "TRACE")
 	}
-	if stack, ok := attr.Value.Any().(traceStack); ok {
+	if stack, ok := value.(traceStack); ok {
 		return slog.String(attr.Key, string(stack))
 	}
-	if err, ok := attr.Value.Any().(error); ok {
+	if err, ok := value.(error); ok {
 		attr.Value = slog.AnyValue(describeError(err, p.errorStack, 0))
 	}
 	return attr
