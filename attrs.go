@@ -39,14 +39,26 @@ func (p attrPipeline) forJSON(groups []string, attr slog.Attr) slog.Attr {
 		return attr
 	}
 	value := attr.Value.Any()
-	if attr.Key == slog.LevelKey && value == LevelFatal {
-		return slog.String(slog.LevelKey, "FATAL")
-	}
-	if attr.Key == slog.LevelKey && value == LevelSuccess {
-		return slog.String(slog.LevelKey, "SUCCESS")
-	}
-	if attr.Key == slog.LevelKey && value == LevelTrace {
-		return slog.String(slog.LevelKey, "TRACE")
+	if level, ok := value.(slog.Level); ok && attr.Key == slog.LevelKey {
+		// Let JSONHandler append built-in names directly instead of invoking
+		// Level.MarshalJSON, which allocates a quoted byte slice. Keep arbitrary
+		// levels on the existing marshaling path for slog's offset names.
+		switch level {
+		case LevelTrace:
+			return slog.String(slog.LevelKey, "TRACE")
+		case slog.LevelDebug:
+			return slog.String(slog.LevelKey, "DEBUG")
+		case slog.LevelInfo:
+			return slog.String(slog.LevelKey, "INFO")
+		case LevelSuccess:
+			return slog.String(slog.LevelKey, "SUCCESS")
+		case slog.LevelWarn:
+			return slog.String(slog.LevelKey, "WARN")
+		case slog.LevelError:
+			return slog.String(slog.LevelKey, "ERROR")
+		case LevelFatal:
+			return slog.String(slog.LevelKey, "FATAL")
+		}
 	}
 	if stack, ok := value.(traceStack); ok {
 		return slog.String(attr.Key, string(stack))
