@@ -63,7 +63,7 @@ func TestJSONLevelTransforms(t *testing.T) {
 			var output bytes.Buffer
 			calls := 0
 			handler := NewHandler(&output, WithFormat(FormatJSON), WithSource(false),
-				withAttrTransform(func(groups []string, attr slog.Attr) slog.Attr {
+				WithReplaceAttr(func(groups []string, attr slog.Attr) slog.Attr {
 					if attr.Key == slog.LevelKey {
 						calls++
 						if len(groups) != 0 || attr.Value.Kind() != slog.KindAny || attr.Value.Any() != slog.LevelInfo {
@@ -120,8 +120,9 @@ func TestJSONDynamicLevels(t *testing.T) {
 	}
 }
 
-// Raw TRACE and FATAL records have no stack-capture or process-exit side effects.
-// Keep construction out of the loop and source disabled to isolate JSON levels.
+// FATAL records logged through slog have no process-exit side effect. TRACE
+// records include their call stack, so the Trace case also measures stack
+// capture. Keep construction out of the loop and source disabled.
 func BenchmarkJSONLevels(b *testing.B) {
 	for _, test := range jsonLevelCases {
 		b.Run(test.name, func(b *testing.B) {

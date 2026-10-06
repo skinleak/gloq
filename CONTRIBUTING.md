@@ -6,8 +6,14 @@ Before opening a pull request, please:
 
 1. Keep changes small and focused.
 2. Add tests for new behavior.
-3. Run `go test ./...`, `go test -race ./...`, and `go vet ./...`.
-4. Update the README when the public API changes.
+3. Run `go test ./...`, `go test -race ./...`, `go vet ./...`, and `gofmt -l .`.
+4. Run `go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...`.
+5. For changes to the pretty handler, fuzz it for a while:
+   `go test -run '^$' -fuzz '^FuzzPrettyHandler$' -fuzztime 1m .`
+6. For performance-sensitive changes, compare benchmarks against `main` with
+   [benchstat](https://pkg.go.dev/golang.org/x/perf/cmd/benchstat). CI posts
+   this comparison on every pull request.
+7. Update the README when the public API changes.
 
 Bug reports and feature ideas are welcome in
 [GitHub Issues](https://github.com/skinleak/gloq/issues). Search existing issues

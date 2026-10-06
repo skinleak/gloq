@@ -37,7 +37,7 @@ func TestPrettyHandler(t *testing.T) {
 		t.Fatalf("Handle() error = %v", err)
 	}
 
-	want := "2026-07-08 11:04:07.312 INFO  request complete service=api request.status=200\n  request.error: none found\n"
+	want := "2026-07-08 11:04:07.312 INFO    request complete service=api request.status=200\n  request.error: none found\n"
 	if got := output.String(); got != want {
 		t.Fatalf("output = %q, want %q", got, want)
 	}
@@ -92,7 +92,7 @@ func TestPrettyBuiltInLevels(t *testing.T) {
 				t.Fatalf("Handle() error = %v", err)
 			}
 
-			padding := strings.Repeat(" ", max(0, 5-len(test.label)))
+			padding := strings.Repeat(" ", max(0, levelWidth-len(test.label)))
 			if got, want := output.String(), test.label+padding+" message\n"; got != want {
 				t.Fatalf("output = %q, want %q", got, want)
 			}
@@ -318,8 +318,8 @@ func TestTraceJSON(t *testing.T) {
 	if record[slog.LevelKey] != "TRACE" {
 		t.Fatalf("level = %v, want TRACE", record[slog.LevelKey])
 	}
-	stack, ok := record[traceStackKey].(string)
-	if !ok || !strings.Contains(stack, "gloq.TestTraceJSON") {
+	stack, ok := record[traceStackKey].([]any)
+	if !ok || len(stack) == 0 || stack[0].(map[string]any)["function"] != "github.com/skinleak/gloq.TestTraceJSON" {
 		t.Fatalf("stack = %#v", record[traceStackKey])
 	}
 }
@@ -448,7 +448,7 @@ func TestFatal(t *testing.T) {
 			if strings.Contains(string(output), "after Fatal") {
 				t.Fatalf("code after Fatal ran: %q", output)
 			}
-			hasRecord := strings.Contains(string(output), "FATAL fatal message code=17")
+			hasRecord := strings.Contains(string(output), "FATAL   fatal message code=17")
 			if hasRecord != test.wantRecord {
 				t.Fatalf("record present = %v, want %v; output = %q", hasRecord, test.wantRecord, output)
 			}
@@ -711,7 +711,7 @@ func TestRecursiveLogValuerIsBounded(t *testing.T) {
 }
 
 func TestAttributePipelineMatchesFormats(t *testing.T) {
-	transform := withAttrTransform(func(groups []string, attr slog.Attr) slog.Attr {
+	transform := WithReplaceAttr(func(groups []string, attr slog.Attr) slog.Attr {
 		if attr.Key == slog.MessageKey {
 			attr.Value = slog.StringValue("changed")
 		}
@@ -755,7 +755,7 @@ func TestAttributePipelineMatchesFormats(t *testing.T) {
 }
 
 func TestSourceTransformStillApplies(t *testing.T) {
-	transform := withAttrTransform(func(_ []string, attr slog.Attr) slog.Attr {
+	transform := WithReplaceAttr(func(_ []string, attr slog.Attr) slog.Attr {
 		if attr.Key == slog.SourceKey {
 			attr.Value = slog.StringValue("redacted")
 		}
@@ -834,6 +834,7 @@ func (recursiveLogValuer) LogValue() slog.Value {
 func FuzzPrettyHandler(f *testing.F) {
 	f.Add("message", "request", "id", "abc123", int32(slog.LevelInfo))
 	f.Add("spaces and \"quotes\"", "", "key.with.dot", "a=b\nnext", int32(LevelSuccess))
+	f.Add("forged\n2026-01-01 ERROR x", "g\x1b[2J", "k\r", "\x1b[31mred\u2028", int32(slog.LevelError))
 
 	f.Fuzz(func(t *testing.T, message, group, key, value string, rawLevel int32) {
 		var output bytes.Buffer
@@ -849,8 +850,13 @@ func FuzzPrettyHandler(f *testing.F) {
 		if err := handler.Handle(context.Background(), record); err != nil {
 			t.Fatalf("Handle() error = %v", err)
 		}
-		if got := output.String(); !strings.HasSuffix(got, "\n") {
-			t.Fatalf("output is not newline terminated: %q", got)
+		// Whatever the input, a record without errors is exactly one line
+		// and cannot carry terminal control sequences.
+		if got := output.String(); strings.Count(got, "\n") != 1 || !strings.HasSuffix(got, "\n") {
+			t.Fatalf("output is not a single line: %q", got)
+		}
+		if got := output.String(); strings.ContainsAny(got, "\x1b\r\u2028\u202e") {
+			t.Fatalf("output contains control characters: %q", got)
 		}
 	})
 }

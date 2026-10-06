@@ -45,7 +45,7 @@ func TestAttributeKinds(t *testing.T) {
 		{"error", slog.AnyValue(err), "\n  value: boom\n", `{"message":"boom","type":"*errors.errorString"}`},
 		{"named string error", slog.AnyValue(attrStringError("boom")), "\n  value: boom\n", `{"message":"boom","type":"gloq.attrStringError"}`},
 		{"typed nil", slog.AnyValue(typedNil), "\n  value: <nil>\n", `{"message":"<nil>","type":"*gloq.nilError"}`},
-		{"trace", slog.AnyValue(traceStack("app.run\n\tapp.go:7")), "\n  stack:\n    app.run\n    \tapp.go:7\n", `"app.run\n\tapp.go:7"`},
+		{"trace", slog.AnyValue(traceStack{{Function: "app.run", File: "app.go", Line: 7}}), "\n  stack:\n    app.run\n    \tapp.go:7\n", `[{"function":"app.run","file":"app.go","line":7}]`},
 		{"group", slog.GroupValue(slog.Group("nested", slog.Int("count", 300), slog.Any("error", err))),
 			" value.nested.count=300\n  value.nested.error: boom\n",
 			`{"nested":{"count":300,"error":{"message":"boom","type":"*errors.errorString"}}}`},
@@ -84,7 +84,7 @@ func TestAttributeKinds(t *testing.T) {
 							if mode == "transformed" {
 								attr.Value = resolve(slog.StringValue("input"))
 								wantCalls = 2
-								options = append(options, withAttrTransform(func(_ []string, a slog.Attr) slog.Attr {
+								options = append(options, WithReplaceAttr(func(_ []string, a slog.Attr) slog.Attr {
 									if a.Key == "value" {
 										transforms++
 										if a.Value.Kind() != slog.KindString || a.Value.String() != "input" {
@@ -109,7 +109,7 @@ func TestAttributeKinds(t *testing.T) {
 								t.Fatalf("LogValue calls = %d, want %d; transforms = %d", calls, wantCalls, transforms)
 							}
 							if format == FormatPretty {
-								if got, want := output.String(), "INFO  message"+test.pretty; got != want {
+								if got, want := output.String(), "INFO    message"+test.pretty; got != want {
 									t.Fatalf("output = %q, want %q", got, want)
 								}
 							} else {

@@ -47,3 +47,94 @@ jobs:
           cache: true
       - name: Test with race detector
         run: go test -race ./...
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.x"
+          cache: true
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "Run gofmt on:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: Staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...
+      - name: Vet and test the benchmark module
+        working-directory: benchmarks/comparison
+        run: |
+          go vet ./...
+          go test ./...
+
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.x"
+          cache: true
+      - name: Fuzz the pretty handler
+        run: go test -run '^$' -fuzz '^FuzzPrettyHandler$' -fuzztime 3m .
+      - name: Upload failing inputs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-failures
+          path: testdata/fuzz
+
+  benchmarks:
+    name: Benchmark comparison
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.x"
+          cache: true
+      - name: Run benchmarks on the base and this branch
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
+          bench() {
+            go test -run '^$' -bench . -benchmem -benchtime 200ms -count 6 -cpu 1 . > "$1"
+          }
+          (cd "$RUNNER_TEMP/base" && bench "$RUNNER_TEMP/base.txt")
+          bench "$RUNNER_TEMP/head.txt"
+      - name: Compare
+        run: |
+          go run golang.org/x/perf/cmd/benchstat@v0.0.0-20260908200009-22c9c6c9d4da \
+            "$RUNNER_TEMP/base.txt" "$RUNNER_TEMP/head.txt" > "$RUNNER_TEMP/benchstat.txt"
+          {
+            echo '## Benchmarks: base vs. this branch'
+            echo
+            echo 'Shared runners are noisy; treat small differences with suspicion.'
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/benchstat.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

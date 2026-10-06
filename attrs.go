@@ -61,18 +61,11 @@ func (p attrPipeline) forJSON(groups []string, attr slog.Attr) slog.Attr {
 		}
 	}
 	if stack, ok := value.(traceStack); ok {
-		return slog.String(attr.Key, string(stack))
+		// A plain slice is encoded by encoding/json as an array of frames.
+		return slog.Any(attr.Key, []traceFrame(stack))
 	}
 	if err, ok := value.(error); ok {
 		attr.Value = slog.AnyValue(describeError(err, p.errorStack, 0))
 	}
 	return attr
-}
-
-func withAttrTransform(transform attrTransform) Option {
-	return func(c *config) {
-		if transform != nil {
-			c.attrTransforms = append(c.attrTransforms, transform)
-		}
-	}
 }
