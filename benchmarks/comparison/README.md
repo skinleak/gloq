@@ -98,4 +98,4 @@ pretty errors, and full-stack TRACE measurements. Package TRACE is a richer
 diagnostic operation than raw TRACE severity; Fatal helpers are never
 benchmarked because they exit the process.
 
-See [the investigation report](REPORT.md) for measurements and profile evidence.
+See [the results](REPORT.md) for the latest measurements.

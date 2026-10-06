@@ -40,7 +40,10 @@ structured JSON output for production.
 - **Safe to log untrusted data.** Newlines and terminal control sequences in
   messages, keys, values, and errors are escaped, so logged input can never
   forge a log line or take over a terminal.
-- **No dependencies** beyond the standard library.
+- **Ready for production.** HTTP request logging with request IDs,
+  OpenTelemetry trace correlation, sampling, and multiple outputs are built in.
+- **No dependencies** beyond the standard library. The OpenTelemetry
+  integration is a separate module.
 
 Plain `slog.TextHandler` has no colors, level names, or error chains.
 Colorizing handlers such as tint cover development output only. If raw JSON
@@ -174,20 +177,91 @@ as an array of `{"function", "file", "line"}` objects.
 
 ## Context Values
 
-Attach values carried by a `context.Context`, such as trace or request IDs, to
+Attach values carried by a `context.Context`, such as tenant or user IDs, to
 every record logged with that context:
 
 ```go
 log := gloq.NewLogger(gloq.WithContextAttrs(func(ctx context.Context) []slog.Attr {
-	span := trace.SpanContextFromContext(ctx)
-	if !span.IsValid() {
-		return nil
+	if tenant, ok := ctx.Value(tenantKey{}).(string); ok {
+		return []slog.Attr{slog.String("tenant", tenant)}
 	}
-	return []slog.Attr{slog.String("trace_id", span.TraceID().String())}
+	return nil
 }))
 
-log.InfoContext(ctx, "request complete")
+log.InfoContext(ctx, "invoice sent") // ... tenant=acme
 ```
+
+`WithContextAttrs` can be passed several times. Ready-made extractors exist for
+OpenTelemetry traces and HTTP request IDs.
+
+### OpenTelemetry
+
+The [`gloqotel`](gloqotel) module adds the current span's `trace_id` and
+`span_id` to every record logged with a context, so logs and traces can be
+correlated. It is a separate module, so gloq itself stays dependency-free:
+
+```sh
+go get github.com/skinleak/gloq/gloqotel
+```
+
+```go
+log := gloq.NewLogger(gloq.WithContextAttrs(gloqotel.ContextAttrs))
+log.InfoContext(ctx, "payment captured") // ... trace_id=4bf9… span_id=00f0…
+```
+
+## HTTP Requests
+
+The [`gloqhttp`](gloqhttp) package logs one record per request and gives every
+request an ID. It uses only the standard library:
+
+```go
+log := gloq.NewLogger(gloq.WithContextAttrs(gloqhttp.ContextAttrs))
+
+handler := gloqhttp.Middleware(log.Logger,
+	gloqhttp.WithSkip(func(r *http.Request) bool { return r.URL.Path == "/healthz" }),
+)(mux)
+http.ListenAndServe(":8080", handler)
+```
+
+```text
+2026-10-06 10:30:15.126 INFO    [handlers.go:42] listing orders request_id=7f3c…
+2026-10-06 10:30:15.127 INFO    [gloqhttp.go:172] http request method=GET path=/orders status=200 bytes=512 duration=1.2ms request_id=7f3c…
+```
+
+Records are written at `INFO`, `WARN` for 4xx responses, and `ERROR` for 5xx
+responses and panics, which are logged and then passed on unchanged. The query
+string is never logged, since it often carries tokens. Request IDs are taken
+from the `X-Request-ID` header when valid, generated otherwise, and echoed in
+the response; `gloqhttp.RequestID(ctx)` returns the current one.
+
+## Multiple Outputs
+
+`gloq.Fanout` sends each record to several handlers, each with its own level
+and format, such as readable output on the terminal and JSON in a file:
+
+```go
+log := gloq.Wrap(slog.New(gloq.Fanout(
+	gloq.NewHandler(os.Stderr, gloq.WithLevel(slog.LevelDebug)),
+	gloq.NewHandler(file, gloq.WithFormat(gloq.FormatJSON), gloq.WithLevel(slog.LevelWarn)),
+)))
+```
+
+## Sampling
+
+`gloq.Sample` keeps a hot loop or a failing dependency from flooding your logs.
+Within every tick, the first records with the same level and message are
+written, and after that only every Nth one:
+
+```go
+handler := gloq.Sample(gloq.NewHandler(os.Stderr), gloq.Sampling{
+	Tick:       time.Second,
+	First:      10,  // per level and message, every second
+	Thereafter: 100, // then every 100th
+})
+```
+
+`FATAL` records are never dropped. Logging a record that is dropped takes under
+200 ns, and sampling needs no locks.
 
 ## Redaction and Renaming
 
@@ -254,16 +328,22 @@ Pass options to `gloq.New`, `gloq.NewLogger`, or `gloq.NewHandler`:
 | `WithReplaceAttr`  | Rewrite, rename, or remove attributes                  |
 | `WithContextAttrs` | Add attributes taken from each record's context        |
 
+Handlers can be combined with `gloq.Fanout` and `gloq.Sample`, and with any
+other `slog.Handler`.
+
 See the [Go package documentation](https://pkg.go.dev/github.com/skinleak/gloq)
 for the complete API.
 
 ## Performance
 
-The pretty handler formats attributes added with `With` once, reuses its
-buffers, and caches source locations, so most records need no allocations.
-Run `go test -bench .` for the handler benchmarks and see
-[benchmarks/comparison](benchmarks/comparison/README.md) for comparisons with
-slog and zap.
+Logging at a disabled level costs about 3.5 ns. Typical records need no
+allocations in either format: JSON output allocates exactly as much as
+`slog.JSONHandler`, and pretty output costs about as much as slog's JSON.
+gloq's JSON takes about twice as long as `slog.JSONHandler` on one core,
+mostly because it uses slog's `ReplaceAttr` path for level names and error
+trees, and zap is faster still. See the
+[benchmark results](benchmarks/comparison/REPORT.md) for measured numbers and
+[benchmarks/comparison](benchmarks/comparison/README.md) to run them yourself.
 
 ## Compatibility
 

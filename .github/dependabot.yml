@@ -7,3 +7,10 @@ updates:
       interval: monthly
     labels:
       - dependencies
+
+  - package-ecosystem: gomod
+    directory: "/gloqotel"
+    schedule:
+      interval: monthly
+    labels:
+      - dependencies
