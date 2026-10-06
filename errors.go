@@ -37,21 +37,25 @@ func describeError(err error, includeStack bool, depth int) structuredError {
 	return detail
 }
 
-func appendPrettyError(line *strings.Builder, detail prettyError, includeStack bool) {
-	line.WriteByte('\n')
+func appendPrettyError(buf []byte, detail prettyError, includeStack, color bool) []byte {
 	causes := errorCauses(detail.err)
-	writeErrorLine(line, "  ", detail.key, errorDisplayMessage(detail.err, causes))
-	appendPrettyCauses(line, causes, "    ", includeStack, 0)
+	keyColor := ""
+	if color {
+		keyColor = errorKeyColor
+	}
+	buf = writeErrorLine(buf, "  ", detail.key, keyColor, errorDisplayMessage(detail.err, causes), true)
+	buf = appendPrettyCauses(buf, causes, "    ", includeStack, color, 0)
 	if includeStack {
 		if stack := errorStack(detail.err); stack != "" {
-			writeErrorLine(line, "    ", "stack", stack)
+			buf = writeErrorLine(buf, "    ", "stack", detailColor(color), stack, false)
 		}
 	}
+	return buf
 }
 
-func appendPrettyCauses(line *strings.Builder, causes []error, indent string, includeStack bool, depth int) {
+func appendPrettyCauses(buf []byte, causes []error, indent string, includeStack, color bool, depth int) []byte {
 	if depth >= maxErrorDepth {
-		return
+		return buf
 	}
 	for index, cause := range causes {
 		label := "caused by"
@@ -59,14 +63,22 @@ func appendPrettyCauses(line *strings.Builder, causes []error, indent string, in
 			label = fmt.Sprintf("caused by[%d]", index)
 		}
 		childCauses := errorCauses(cause)
-		writeErrorLine(line, indent, label, errorDisplayMessage(cause, childCauses))
+		buf = writeErrorLine(buf, indent, label, detailColor(color), errorDisplayMessage(cause, childCauses), false)
 		if includeStack {
 			if stack := errorStack(cause); stack != "" {
-				writeErrorLine(line, indent+"  ", "stack", stack)
+				buf = writeErrorLine(buf, indent+"  ", "stack", detailColor(color), stack, false)
 			}
 		}
-		appendPrettyCauses(line, childCauses, indent+"  ", includeStack, depth+1)
+		buf = appendPrettyCauses(buf, childCauses, indent+"  ", includeStack, color, depth+1)
 	}
+	return buf
+}
+
+func detailColor(color bool) string {
+	if color {
+		return faintColor
+	}
+	return ""
 }
 
 func errorDisplayMessage(err error, causes []error) string {
@@ -89,13 +101,31 @@ func errorDisplayMessage(err error, causes []error) string {
 	return message
 }
 
-func writeErrorLine(line *strings.Builder, indent, label, message string) {
-	message = strings.ReplaceAll(message, "\n", "\n"+indent+"  ")
-	line.WriteString(indent)
-	line.WriteString(label)
-	line.WriteString(": ")
-	line.WriteString(message)
-	line.WriteByte('\n')
+// writeErrorLine writes "label: message", indenting continuation lines so a
+// multi-line message cannot be mistaken for a new record.
+func writeErrorLine(buf []byte, indent, label, labelColor, message string, quoteLabel bool) []byte {
+	buf = append(buf, indent...)
+	buf = append(buf, labelColor...)
+	if quoteLabel {
+		buf = appendKey(buf, nil, label)
+	} else {
+		buf = append(buf, label...)
+	}
+	if labelColor != "" {
+		buf = append(buf, resetColor...)
+	}
+	buf = append(buf, ": "...)
+	for {
+		line, rest, found := strings.Cut(message, "\n")
+		buf = appendText(buf, line)
+		buf = append(buf, '\n')
+		if !found {
+			return buf
+		}
+		buf = append(buf, indent...)
+		buf = append(buf, "  "...)
+		message = rest
+	}
 }
 
 func errorCauses(err error) []error {
