@@ -142,9 +142,9 @@ func TestJSONLevelAttrKinds(t *testing.T) {
 		{slog.AnyValue(LevelSuccess), slog.StringValue("SUCCESS")},
 		{slog.AnyValue(attrTestLogValuer(func() slog.Value { return slog.AnyValue(LevelTrace) })), slog.StringValue("TRACE")},
 	} {
-		got := (attrPipeline{}).forJSON(nil, slog.Attr{Key: slog.LevelKey, Value: test.value})
+		got := referenceForJSON(attrPipeline{}, nil, slog.Attr{Key: slog.LevelKey, Value: test.value})
 		if !got.Value.Equal(test.want) || got.Key != slog.LevelKey {
-			t.Errorf("forJSON(%v) = %v, want %v", test.value, got, test.want)
+			t.Errorf("referenceForJSON(%v) = %v, want %v", test.value, got, test.want)
 		}
 	}
 }

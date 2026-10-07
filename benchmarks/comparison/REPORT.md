@@ -1,5 +1,11 @@
 # Benchmark results
 
+> **Outdated for JSON.** These numbers predate gloq's native JSON encoder
+> ([#4](https://github.com/skinleak/gloq/pull/4)). gloq's JSON output is now
+> faster than `slog.JSONHandler`, and the JSON rows and the summary below no
+> longer apply. Pretty output is unchanged. The report will be updated with a
+> new measurement.
+
 Measured on 2026-10-06 with `sh run.sh measure` (6 samples × 200 ms,
 `-cpu=1` unless noted), Go 1.26.4, linux/amd64, Intel Core Ultra 7 268V
 (8 cores), zap v1.28.0. Values are benchstat medians. Shared laptop hardware,
