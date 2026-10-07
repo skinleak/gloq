@@ -397,6 +397,25 @@ func TestPrettyHandlerConformance(t *testing.T) {
 	}
 }
 
+func TestJSONHandlerConformance(t *testing.T) {
+	var output bytes.Buffer
+	handler := NewHandler(&output, WithFormat(FormatJSON), WithSource(false))
+	err := slogtest.TestHandler(handler, func() []map[string]any {
+		var results []map[string]any
+		for _, line := range bytes.Split(bytes.TrimSpace(output.Bytes()), []byte("\n")) {
+			var entry map[string]any
+			if err := json.Unmarshal(line, &entry); err != nil {
+				t.Fatal(err)
+			}
+			results = append(results, entry)
+		}
+		return results
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestJSONFatalLevel(t *testing.T) {
 	var output bytes.Buffer
 	handler := NewHandler(&output, WithFormat(FormatJSON), WithSource(false))

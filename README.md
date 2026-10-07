@@ -337,11 +337,10 @@ for the complete API.
 ## Performance
 
 Logging at a disabled level costs about 3.5 ns. Typical records need no
-allocations in either format: JSON output allocates exactly as much as
-`slog.JSONHandler`, and pretty output costs about as much as slog's JSON.
-gloq's JSON takes about twice as long as `slog.JSONHandler` on one core,
-mostly because it uses slog's `ReplaceAttr` path for level names and error
-trees, and zap is faster still. See the
+allocations in either format. gloq encodes JSON itself and is faster than
+`slog.JSONHandler` for typical records, even though it writes errors as
+structured trees; with source locations enabled it takes about half as long.
+Pretty output costs about as much as slog's JSON. zap is faster still. See the
 [benchmark results](benchmarks/comparison/REPORT.md) for measured numbers and
 [benchmarks/comparison](benchmarks/comparison/README.md) to run them yourself.
 

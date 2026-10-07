@@ -201,15 +201,16 @@ func NewHandler(out io.Writer, options ...Option) slog.Handler {
 	var handler slog.Handler
 	if format == FormatJSON {
 		handler = &jsonHandler{
-			inner: slog.NewJSONHandler(out, &slog.HandlerOptions{
-				AddSource: c.addSource,
-				Level:     c.level,
-				ReplaceAttr: func(groups []string, attr slog.Attr) slog.Attr {
-					return pipeline.forJSON(groups, attr)
-				},
-			}),
-			location:     c.location,
-			contextAttrs: c.contextAttrs,
+			out: out,
+			mu:  &sync.Mutex{},
+			options: &jsonOptions{
+				level:        c.level,
+				addSource:    c.addSource,
+				errorStack:   c.errorStack,
+				location:     c.location,
+				pipeline:     pipeline,
+				contextAttrs: c.contextAttrs,
+			},
 		}
 	} else {
 		handler = &prettyHandler{

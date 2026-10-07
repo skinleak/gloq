@@ -35,11 +35,21 @@ All notable changes to gloq are documented here. The format follows
 - Pretty output aligns level names and dims timestamps, sources, and keys.
 - Much faster handlers: JSON records at built-in levels need no allocations,
   and pretty output formats attributes added with `With` only once.
+- JSON output is encoded by gloq itself instead of `slog.JSONHandler`, and
+  is now faster than `slog.JSONHandler`. Records take less than half as long
+  as before, and errors and source locations need no allocations. Output is
+  unchanged apart from the fixes below.
 
 ### Fixed
 
 - Newlines and terminal control sequences in logged data are escaped in pretty
   output, so logged input cannot forge log lines.
+- JSON output stays valid when every attribute of a group is removed, such as
+  by `WithReplaceAttr` or an empty `*slog.Source`; the group is left out.
+  Later `WithReplaceAttr` calls no longer see the removed group.
+- A time outside the years 0 to 9999 is written as a JSON string instead of
+  producing invalid JSON.
+- A panicking `MarshalJSON` method no longer crashes the program on Go 1.21.
 
 ## [1.1.0] - 2026-09-21
 
