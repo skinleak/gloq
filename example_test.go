@@ -105,6 +105,16 @@ func ExampleWithReplaceAttr() {
 	// INFO    user signed in user=ada password=[REDACTED]
 }
 
+func ExampleWithPreset() {
+	log := exampleLogger(gloq.WithFormat(gloq.FormatJSON), gloq.WithPreset(gloq.PresetGCP))
+
+	log.Success("order placed", "order_id", 42)
+	log.Warn("disk almost full", "free", "2%")
+	// Output:
+	// {"severity":"NOTICE","message":"order placed","order_id":42}
+	// {"severity":"WARNING","message":"disk almost full","free":"2%"}
+}
+
 func ExampleWithContextAttrs() {
 	type tenantKey struct{}
 	log := exampleLogger(gloq.WithContextAttrs(func(ctx context.Context) []slog.Attr {

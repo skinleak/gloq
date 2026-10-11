@@ -53,3 +53,24 @@ func BenchmarkContextAttrs(b *testing.B) {
 		_ = gloqotel.ContextAttrs(ctx)
 	}
 }
+
+func TestGCPContextAttrs(t *testing.T) {
+	extract := gloqotel.GCPContextAttrs("my-project")
+	attrs := extract(spanContext(t))
+	want := []slog.Attr{
+		slog.String("logging.googleapis.com/trace", "projects/my-project/traces/4bf92f3577b34da6a3ce929d0e0e4736"),
+		slog.String("logging.googleapis.com/spanId", "00f067aa0ba902b7"),
+		slog.Bool("logging.googleapis.com/trace_sampled", true),
+	}
+	if len(attrs) != len(want) {
+		t.Fatalf("GCPContextAttrs() = %v, want %v", attrs, want)
+	}
+	for index := range want {
+		if !attrs[index].Equal(want[index]) {
+			t.Fatalf("GCPContextAttrs() = %v, want %v", attrs, want)
+		}
+	}
+	if attrs := extract(context.Background()); attrs != nil {
+		t.Fatalf("GCPContextAttrs() without a span = %v, want nil", attrs)
+	}
+}

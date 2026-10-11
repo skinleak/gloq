@@ -59,6 +59,7 @@ type config struct {
 	location       *time.Location
 	attrTransforms []attrTransform
 	contextAttrs   []func(context.Context) []slog.Attr
+	preset         Preset
 }
 
 func defaultConfig() config {
@@ -210,6 +211,7 @@ func NewHandler(out io.Writer, options ...Option) slog.Handler {
 				location:     c.location,
 				pipeline:     pipeline,
 				contextAttrs: c.contextAttrs,
+				preset:       presetFor(c.preset),
 			},
 		}
 	} else {

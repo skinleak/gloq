@@ -35,6 +35,7 @@ type jsonOptions struct {
 	location     *time.Location
 	pipeline     attrPipeline
 	contextAttrs []func(context.Context) []slog.Attr
+	preset       *presetSpec
 }
 
 type jsonHandler struct {
@@ -227,19 +228,24 @@ func (s *jsonState) closeGroup() {
 
 func (s *jsonState) appendBuiltinTime(stamp time.Time) {
 	if len(s.options.pipeline.transforms) > 0 {
-		s.appendAttr(slog.Time(slog.TimeKey, stamp))
+		s.appendBuiltinAttr(slog.Time(slog.TimeKey, stamp))
 		return
 	}
-	s.appendKey(slog.TimeKey)
+	s.appendKey(s.options.preset.timeKey)
 	s.buf = appendJSONTime(s.buf, stamp)
 }
 
 func (s *jsonState) appendBuiltinLevel(level slog.Level) {
 	if len(s.options.pipeline.transforms) > 0 {
-		s.appendAttr(slog.Any(slog.LevelKey, level))
+		s.appendBuiltinAttr(slog.Any(slog.LevelKey, level))
 		return
 	}
-	s.appendKey(slog.LevelKey)
+	preset := s.options.preset
+	s.appendKey(preset.levelKey)
+	if preset.levelName != nil {
+		s.buf = appendJSONString(s.buf, preset.levelName(level))
+		return
+	}
 	s.buf = appendJSONLevel(s.buf, slog.LevelKey, level)
 }
 
@@ -250,22 +256,33 @@ func (s *jsonState) appendBuiltinSource(pc uintptr) {
 		if pc != 0 {
 			source = *sourceFor(pc)
 		}
-		s.appendAttr(slog.Any(slog.SourceKey, &source))
+		s.appendBuiltinAttr(slog.Any(slog.SourceKey, &source))
 		return
 	}
 	if pc == 0 {
 		return
 	}
-	s.appendSource(slog.SourceKey, sourceFor(pc))
+	s.appendSource(s.options.preset.sourceKey, sourceFor(pc))
 }
 
 func (s *jsonState) appendBuiltinMessage(message string) {
 	if len(s.options.pipeline.transforms) > 0 {
-		s.appendAttr(slog.String(slog.MessageKey, message))
+		s.appendBuiltinAttr(slog.String(slog.MessageKey, message))
 		return
 	}
-	s.appendKey(slog.MessageKey)
+	s.appendKey(s.options.preset.messageKey)
 	s.buf = appendJSONString(s.buf, message)
+}
+
+// appendBuiltinAttr writes a built-in attribute through the ReplaceAttr
+// functions, which see it under slog's key, and then applies the preset.
+func (s *jsonState) appendBuiltinAttr(attr slog.Attr) {
+	attr = s.options.pipeline.apply(s.groups, attr)
+	if attr.Equal(slog.Attr{}) {
+		return
+	}
+	attr.Key = s.options.preset.builtinKey(attr.Key)
+	s.appendReplaced(attr, true)
 }
 
 // appendAttr writes an attribute and reports whether anything was written.
@@ -279,6 +296,12 @@ func (s *jsonState) appendAttr(attr slog.Attr) bool {
 			return false
 		}
 	}
+	return s.appendReplaced(attr, false)
+}
+
+// appendReplaced writes an attribute that has passed through ReplaceAttr.
+// builtin reports whether it is one of the record's built-in attributes.
+func (s *jsonState) appendReplaced(attr slog.Attr, builtin bool) bool {
 	value := attr.Value
 	switch value.Kind() {
 	case slog.KindGroup:
@@ -289,7 +312,11 @@ func (s *jsonState) appendAttr(attr slog.Attr) bool {
 			return s.appendSource(attr.Key, special)
 		case slog.Level:
 			s.appendKey(attr.Key)
-			s.buf = appendJSONLevel(s.buf, attr.Key, special)
+			if levelName := s.options.preset.levelName; builtin && levelName != nil {
+				s.buf = appendJSONString(s.buf, levelName(special))
+			} else {
+				s.buf = appendJSONLevel(s.buf, attr.Key, special)
+			}
 			return true
 		case traceStack:
 			s.appendKey(attr.Key)
@@ -297,7 +324,7 @@ func (s *jsonState) appendAttr(attr slog.Attr) bool {
 			return true
 		case error:
 			s.appendKey(attr.Key)
-			s.buf = appendJSONError(s.buf, special, s.options.errorStack, 0)
+			s.buf = appendJSONError(s.buf, special, s.options.preset.errorType, s.options.errorStack, 0)
 			return true
 		}
 	}
@@ -484,11 +511,12 @@ func appendJSONAny(buf []byte, value any) (result []byte) {
 }
 
 // appendJSONError writes an error as an object with its message, type, and
-// causes, and its stack when requested.
-func appendJSONError(buf []byte, err error, includeStack bool, depth int) []byte {
+// causes, and its stack when requested. typeField is written before the type,
+// such as `,"type":`.
+func appendJSONError(buf []byte, err error, typeField string, includeStack bool, depth int) []byte {
 	buf = append(buf, `{"message":`...)
 	buf = appendJSONString(buf, errorMessage(err))
-	buf = append(buf, `,"type":`...)
+	buf = append(buf, typeField...)
 	buf = appendJSONString(buf, errorType(err))
 	if depth < maxErrorDepth && !isNilError(err) {
 		count := 0
@@ -499,7 +527,7 @@ func appendJSONError(buf []byte, err error, includeStack bool, depth int) []byte
 				buf = append(buf, ',')
 			}
 			count++
-			buf = appendJSONError(buf, cause, includeStack, depth+1)
+			buf = appendJSONError(buf, cause, typeField, includeStack, depth+1)
 		}
 		if joined, ok := err.(interface{ Unwrap() []error }); ok {
 			for _, cause := range unwrapMany(joined) {
