@@ -346,7 +346,7 @@ func TestContextAttrs(t *testing.T) {
 	logger := slog.New(NewHandler(&pretty, WithColor(ColorNever), WithSource(false), noTime, extract)).With("service", "api")
 	logger.InfoContext(ctx, "handled", "status", 200)
 	logger.Info("no context value")
-	want := "INFO    handled service=api request_id=abc123 status=200\nINFO    no context value service=api\n"
+	want := "INFO    handled service=api status=200 request_id=abc123\nINFO    no context value service=api\n"
 	if got := pretty.String(); got != want {
 		t.Fatalf("pretty = %q, want %q", got, want)
 	}
@@ -360,6 +360,14 @@ func TestContextAttrs(t *testing.T) {
 		if err := json.Unmarshal([]byte(line), &record); err != nil || record["request_id"] != "abc123" {
 			t.Fatalf("record = %s, %v", line, err)
 		}
+	}
+
+	// Both formats write context attributes after the record's own.
+	jsonOutput.Reset()
+	logger = slog.New(NewHandler(&jsonOutput, WithFormat(FormatJSON), WithSource(false), extract)).With("service", "api")
+	logger.InfoContext(ctx, "handled", "status", 200)
+	if want := `"service":"api","status":200,"request_id":"abc123"}`; !strings.Contains(jsonOutput.String(), want) {
+		t.Fatalf("json = %s, want it to contain %s", jsonOutput.String(), want)
 	}
 }
 

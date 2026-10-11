@@ -38,3 +38,34 @@ func ContextAttrs(ctx context.Context) []slog.Attr {
 		slog.String(SpanIDKey, span.SpanID().String()),
 	}
 }
+
+// Attribute keys Google Cloud Logging reads to link a log entry to its trace.
+const (
+	GCPTraceKey        = "logging.googleapis.com/trace"
+	GCPSpanIDKey       = "logging.googleapis.com/spanId"
+	GCPTraceSampledKey = "logging.googleapis.com/trace_sampled"
+)
+
+// GCPContextAttrs returns a function that adds the span in a context in the
+// form Google Cloud Logging expects, so log entries are shown with their
+// traces in Cloud Trace. projectID is the Google Cloud project the traces
+// are exported to. Use it with gloq's GCP preset:
+//
+//	log := gloq.NewLogger(
+//		gloq.WithPreset(gloq.PresetGCP),
+//		gloq.WithContextAttrs(gloqotel.GCPContextAttrs("my-project")),
+//	)
+func GCPContextAttrs(projectID string) func(ctx context.Context) []slog.Attr {
+	prefix := "projects/" + projectID + "/traces/"
+	return func(ctx context.Context) []slog.Attr {
+		span := trace.SpanContextFromContext(ctx)
+		if !span.IsValid() {
+			return nil
+		}
+		return []slog.Attr{
+			slog.String(GCPTraceKey, prefix+span.TraceID().String()),
+			slog.String(GCPSpanIDKey, span.SpanID().String()),
+			slog.Bool(GCPTraceSampledKey, span.IsSampled()),
+		}
+	}
+}

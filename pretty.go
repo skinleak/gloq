@@ -94,6 +94,11 @@ func (h *prettyHandler) Handle(ctx context.Context, record slog.Record) error {
 	s.buf = append(s.buf, h.prefix...)
 	s.errors = append(s.errors, h.errors...)
 	s.stacks = append(s.stacks, h.stacks...)
+	record.Attrs(func(attr slog.Attr) bool {
+		o.appendAttr(s, h.groups, attr)
+		return true
+	})
+	// Context attributes follow the record's own, as in JSON output.
 	if ctx != nil {
 		for _, extract := range o.contextAttrs {
 			for _, attr := range extract(ctx) {
@@ -101,10 +106,6 @@ func (h *prettyHandler) Handle(ctx context.Context, record slog.Record) error {
 			}
 		}
 	}
-	record.Attrs(func(attr slog.Attr) bool {
-		o.appendAttr(s, h.groups, attr)
-		return true
-	})
 	if record.Level <= LevelTrace {
 		if stack := captureTraceStack(record.PC); len(stack) > 0 {
 			s.stacks = append(s.stacks, stack)
