@@ -17,10 +17,12 @@
 // to your own [slog.Logger], or the package-level logging functions for small
 // applications. [NewTestLogger] sends output to a test's log.
 //
-// [Fanout] sends records to several handlers, such as pretty output and a JSON
-// file, and [Sample] limits how often repeated records are written. The
-// gloqhttp package logs HTTP requests with request IDs, and the separate
-// gloqotel module adds OpenTelemetry trace IDs to records.
+// [WithPreset] adapts JSON output to a log platform such as Google Cloud
+// Logging or Datadog. [Fanout] sends records to several handlers, such as
+// pretty output and a JSON file, and [Sample] limits how often repeated
+// records are written. The gloqhttp package logs HTTP requests with request
+// IDs, the gloqtest package records log records so tests can assert on them,
+// and the separate gloqotel module adds OpenTelemetry trace IDs to records.
 //
 // TRACE records include the call stack of the code that logged them. Logged
 // messages, keys, values, and errors are escaped in pretty output, so

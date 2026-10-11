@@ -6,6 +6,21 @@ All notable changes to gloq are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `WithPreset` with `PresetGCP` and `PresetDatadog`: JSON output uses the
+  field names and severities Google Cloud Logging or Datadog recognize.
+- `gloqtest` package: a `Recorder` handler that keeps every record, with
+  `Find`, `Count`, `AssertLogged`, and `AssertNotLogged` for checking what
+  code logged.
+- `gloqotel.GCPContextAttrs`, which links records to their traces in Google
+  Cloud Trace.
+
+### Changed
+
+- Pretty output writes attributes from `WithContextAttrs` after the record's
+  own attributes, as JSON output already did.
+
 ## [1.2.0] - 2026-10-07
 
 ### Added

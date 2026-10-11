@@ -175,6 +175,32 @@ JSON output uses the standard slog field structure while preserving gloq's
 custom level names and structured error handling. `TRACE` stacks are written
 as an array of `{"function", "file", "line"}` objects.
 
+### Log Platforms
+
+Presets write the field names and severities a log platform recognizes, so
+records are parsed correctly without a custom pipeline:
+
+```go
+log := gloq.NewLogger(gloq.WithFormat(gloq.FormatAuto), gloq.WithPreset(gloq.PresetGCP))
+log.Success("order placed", "order_id", 42)
+// {"time":"…","severity":"NOTICE","logging.googleapis.com/sourceLocation":{…},"message":"order placed","order_id":42}
+```
+
+| Preset          | Time        | Level                                     | Message   | Source                                  |
+| --------------- | ----------- | ----------------------------------------- | --------- | --------------------------------------- |
+| `PresetSlog`    | `time`      | `level`: `INFO`, `SUCCESS`, …             | `msg`     | `source`                                |
+| `PresetGCP`     | `time`      | `severity`: `INFO`, `NOTICE`, `CRITICAL`… | `message` | `logging.googleapis.com/sourceLocation` |
+| `PresetDatadog` | `timestamp` | `status`: `info`, `success`, `critical`…  | `message` | `source`                                |
+
+Google Cloud has no `SUCCESS` or `TRACE` severity, so they are written as
+`NOTICE` and `DEBUG`, and `FATAL` as `CRITICAL`. With `PresetDatadog`, errors
+name their type `kind`, so an error logged under the key `error` fills
+Datadog's `error.kind`, `error.message`, and `error.stack` attributes.
+
+Presets only change JSON output; pretty output stays the same. Your
+`WithReplaceAttr` functions still see slog's standard keys, such as
+`slog.LevelKey`.
+
 ## Context Values
 
 Attach values carried by a `context.Context`, such as tenant or user IDs, to
@@ -207,6 +233,16 @@ go get github.com/skinleak/gloq/gloqotel
 ```go
 log := gloq.NewLogger(gloq.WithContextAttrs(gloqotel.ContextAttrs))
 log.InfoContext(ctx, "payment captured") // ... trace_id=4bf9… span_id=00f0…
+```
+
+On Google Cloud, use `gloqotel.GCPContextAttrs` with `PresetGCP` instead, so
+log entries are linked to their traces in Cloud Trace:
+
+```go
+log := gloq.NewLogger(
+	gloq.WithPreset(gloq.PresetGCP),
+	gloq.WithContextAttrs(gloqotel.GCPContextAttrs("my-project")),
+)
 ```
 
 ## HTTP Requests
@@ -310,6 +346,34 @@ func TestCheckout(t *testing.T) {
 It logs every level without colors unless you pass options, and drops records
 written after the test has finished.
 
+To check *what* was logged, use the [`gloqtest`](gloqtest) package. A
+`Recorder` is a handler that keeps every record, and its assertions match by
+level, message, and the attributes a record must contain:
+
+```go
+func TestCheckout(t *testing.T) {
+	rec := gloqtest.NewRecorder()
+	service := checkout.New(rec.Logger())
+
+	service.Pay(ctx, order)
+
+	rec.AssertLogged(t, slog.LevelError, "payment failed",
+		"order_id", 42,
+		"error", checkout.ErrCardDeclined, // matched with errors.Is
+	)
+	rec.AssertNotLogged(t, gloq.LevelSuccess, "order placed")
+}
+```
+
+A failed assertion lists every record that was logged:
+
+```text
+no record matches ERROR "payment failed" order_id=42
+2 records were logged:
+	INFO "charging card" order_id=42
+	ERROR "payment failed" order_id=41 error=card declined
+```
+
 ## Configuration
 
 Pass options to `gloq.New`, `gloq.NewLogger`, or `gloq.NewHandler`:
@@ -319,6 +383,7 @@ Pass options to `gloq.New`, `gloq.NewLogger`, or `gloq.NewHandler`:
 | `WithLevel`        | Set the minimum enabled log level                      |
 | `WithLevelFromEnv` | Read the minimum level from an environment variable    |
 | `WithFormat`       | Choose pretty, JSON, or automatic output               |
+| `WithPreset`       | Use a log platform's JSON field names and severities   |
 | `WithColor`        | Enable, disable, or automatically detect color support |
 | `WithSource`       | Show or hide the caller's source file and line         |
 | `WithSourcePath`   | Show the file name, its directory, or the full path    |
